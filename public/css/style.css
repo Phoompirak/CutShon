@@ -437,11 +437,21 @@ main {
     flex: 1;
     min-height: 80px;
     display: flex;
-    flex-direction: column;
+    flex-direction: row; /* Ruler on the right */
     border-radius: 8px;
     overflow: hidden;
     background: rgba(0,0,0,0.3);
 }
+
+#waveform-v-wrapper {
+    position: relative;
+    flex: 1;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
 #waveform-inner::before {
     content: '';
     position: absolute;
@@ -451,8 +461,48 @@ main {
         linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
     background-size: 60px 25%;
     pointer-events: none;
-    z-index: 0;
+    z-index: 10; /* Above the scale */
 }
+
+/* dB Ruler Sidebar */
+.db-ruler {
+    width: 32px;
+    height: 100%;
+    background: rgba(10, 12, 22, 0.85);
+    border-left: 1px solid var(--glass-border);
+    position: relative;
+    z-index: 15;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.db-tick {
+    position: absolute;
+    right: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 5px;
+    font-size: 8px;
+    font-weight: 700;
+    color: var(--text-dim);
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.db-tick::before {
+    content: '';
+    position: absolute;
+    right: 0;
+    width: 4px;
+    height: 1px;
+    background: var(--text-dim);
+    opacity: 0.5;
+}
+
+.db-tick.major { color: var(--text-mid); }
+.db-tick.major::before { width: 7px; opacity: 1; background: var(--text-mid); }
 #waveform {
     flex: 1;
     min-height: 0;

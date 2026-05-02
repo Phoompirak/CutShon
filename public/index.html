@@ -110,13 +110,16 @@
                         <!-- Zoom control bar -->
                         <div id="zoom-bar">
                             <span class="zoom-label" data-i18n="zoom_label">Zoom</span>
-                            <input type="range" id="zoom-slider" min="1" max="100" step="0.1" value="1">
+                            <input type="range" id="zoom-slider" min="1" max="400" step="0.1" value="1">
                             <span id="zoom-level">Fit</span>
                         </div>
                         <div id="waveform-inner">
-                            <div id="waveform"></div>
-                            <!-- Threshold line overlay -->
-                            <canvas id="threshold-overlay"></canvas>
+                            <div id="waveform-v-wrapper">
+                                <div id="waveform"></div>
+                                <!-- Threshold line overlay -->
+                                <canvas id="threshold-overlay"></canvas>
+                            </div>
+                            <div id="db-ruler" class="db-ruler"></div>
                         </div>
                         <div id="waveform-timeline-bar"></div>
                     </div>
@@ -266,10 +269,15 @@
                     <button id="export-btn" class="btn btn-primary btn-full" disabled data-i18n="btn_export_now">
                         Export Now
                     </button>
-                    <!-- Real-time export progress -->
-                    <div id="export-progress" class="hidden"
-                        style="margin-top: 12px; font-size: 11px; color: var(--primary); text-align: center;">
-                        Encoding: 0%
+                    <!-- Real-time export progress bar -->
+                    <div id="export-progress-container" class="hidden" style="margin-top: 12px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 4px; color: var(--text-dim);">
+                            <span data-i18n="encoding_label">Encoding...</span>
+                            <span id="export-progress-percent">0%</span>
+                        </div>
+                        <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden;">
+                            <div id="export-progress-bar" style="width: 0%; height: 100%; background: var(--primary); transition: width 0.3s ease;"></div>
+                        </div>
                     </div>
                 </div>
 

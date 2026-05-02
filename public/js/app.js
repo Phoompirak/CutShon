@@ -85,7 +85,9 @@ const autoSkipToggle = document.getElementById('auto-skip-toggle');
 const analyzeBtn     = document.getElementById('analyze-btn');
 const exportBtn      = document.getElementById('export-btn');
 const exportFormat   = document.getElementById('export-format');
-const exportProgress = document.getElementById('export-progress');
+const exportProgressContainer = document.getElementById('export-progress-container');
+const exportProgressBar       = document.getElementById('export-progress-bar');
+const exportProgressPercent   = document.getElementById('export-progress-percent');
 const loader         = document.getElementById('loader');
 const loaderText     = document.getElementById('loader-text');
 const fileInfo       = document.getElementById('file-info');
@@ -120,6 +122,10 @@ const PRESETS = {
     quiet:        { thresholdDb: -42, minSilence: 0.8, paddingBefore: 0.1,  paddingAfter: 0.15, mergeGap: 0.3, minClipLength: 0.6 }
 };
 
+let vZoom = 1.0;
+const MAX_VZOOM = 50.0;
+const MIN_VZOOM = 0.5;
+
 // ═══════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════
@@ -129,6 +135,8 @@ function init() {
     initResizer();
     setupAutoAdvance();
     initMobileNav();
+    initVerticalZoom();
+    renderDbRuler();
 }
 
 function initMobileNav() {
@@ -328,46 +336,52 @@ function initWaveSurfer(peaks) {
 // ═══════════════════════════════════════
 //  THRESHOLD LINE — canvas overlay
 // ═══════════════════════════════════════
-function drawThresholdLine() {
-    const canvas = document.getElementById('threshold-overlay');
-    if (!canvas) return;
+function getWaveformMetrics() {
     const inner = document.getElementById('waveform-inner');
-    if (!inner) return;
+    const canvas = document.getElementById('threshold-overlay');
+    if (!inner || !canvas) return null;
 
     const W = inner.offsetWidth;
     const containerH = inner.offsetHeight;
-    if (W === 0 || containerH === 0) return;
+    if (W === 0 || containerH === 0) return null;
 
-    canvas.width  = W;
+    canvas.width = W;
     canvas.height = containerH;
 
-    // Find the actual WaveSurfer canvas to get precise vertical alignment.
-    // WaveSurfer may not fill the full container height depending on its height option.
-    const wsCanvas = inner.querySelector('canvas');
+    const wsCanvas = inner.querySelector('#waveform canvas');
     let centerY, waveHalf;
     if (wsCanvas) {
         const innerRect = inner.getBoundingClientRect();
-        const wsRect    = wsCanvas.getBoundingClientRect();
+        const wsRect = wsCanvas.getBoundingClientRect();
         const offsetTop = wsRect.top - innerRect.top;
         waveHalf = wsRect.height / 2;
-        centerY  = offsetTop + waveHalf;
+        centerY = offsetTop + waveHalf;
     } else {
         waveHalf = containerH / 2;
-        centerY  = containerH / 2;
+        centerY = containerH / 2;
     }
 
+    return { W, containerH, centerY, waveHalf };
+}
+
+function drawThresholdLine() {
+    const metrics = getWaveformMetrics();
+    if (!metrics) return;
+    const { W, containerH, centerY, waveHalf } = metrics;
+
+    const canvas = document.getElementById('threshold-overlay');
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, W, containerH);
 
     const db  = parseFloat(paramMap.thresholdDb.el.value);
     const amp = Math.pow(10, db / 20);
 
-    const topY    = centerY - amp * waveHalf;
-    const bottomY = centerY + amp * waveHalf;
+    // Account for vertical zoom
+    const topY    = centerY - (amp * waveHalf * vZoom);
+    const bottomY = centerY + (amp * waveHalf * vZoom);
     const bandH   = bottomY - topY;
 
     ctx.save();
-
     // Gradient fill — stronger at center, fades at edges of band
     const grad = ctx.createLinearGradient(0, topY, 0, bottomY);
     grad.addColorStop(0,   'rgba(255, 210, 40, 0.30)');
@@ -378,10 +392,12 @@ function drawThresholdLine() {
 
     // Dashed threshold lines
     ctx.strokeStyle = 'rgba(255, 210, 40, 0.85)';
-    ctx.lineWidth   = 1.5;
-    ctx.setLineDash([6, 4]);
-    ctx.beginPath(); ctx.moveTo(0, topY);    ctx.lineTo(W, topY);    ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, bottomY); ctx.lineTo(W, bottomY); ctx.stroke();
+    ctx.setLineDash([5, 3]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, topY); ctx.lineTo(W, topY);
+    ctx.moveTo(0, bottomY); ctx.lineTo(W, bottomY);
+    ctx.stroke();
 
     // dB label
     ctx.setLineDash([]);
@@ -391,6 +407,99 @@ function drawThresholdLine() {
     ctx.fillText(`${db} dB`, 8, labelY);
 
     ctx.restore();
+}
+
+// ═══════════════════════════════════════
+//  VERTICAL ZOOM & dB RULER
+// ═══════════════════════════════════════
+function initVerticalZoom() {
+    const ruler = document.getElementById('db-ruler');
+    const waveformWrapper = document.getElementById('waveform-v-wrapper');
+    
+    // RULER HOVER: Vertical Zoom (Amplitude)
+    ruler?.addEventListener('wheel', (e) => {
+        if (e.shiftKey) {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            vZoom = Math.min(MAX_VZOOM, Math.max(MIN_VZOOM, vZoom * delta));
+            updateVerticalZoom();
+        }
+    }, { passive: false });
+
+    // WAVEFORM HOVER: Horizontal Zoom (Time)
+    waveformWrapper?.addEventListener('wheel', (e) => {
+        if (e.shiftKey) {
+            e.preventDefault();
+            const slider = document.getElementById('zoom-slider');
+            if (!slider) return;
+
+            let val = parseFloat(slider.value);
+            // Invert delta logic for better feel in horizontal zoom (up = zoom in)
+            const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+            val = Math.min(parseFloat(slider.max), Math.max(parseFloat(slider.min), val * zoomFactor));
+            
+            slider.value = val;
+            applyZoom(val);
+        }
+    }, { passive: false });
+}
+
+function updateVerticalZoom() {
+    const waveform = document.getElementById('waveform');
+    if (waveform) {
+        // We scale the waveform container
+        waveform.style.transform = `scaleY(${vZoom})`;
+        waveform.style.transformOrigin = 'center';
+    }
+    drawThresholdLine();
+    renderDbRuler();
+}
+
+function renderDbRuler() {
+    const metrics = getWaveformMetrics();
+    if (!metrics) return;
+    const { containerH, centerY, waveHalf } = metrics;
+
+    const ruler = document.getElementById('db-ruler');
+    if (!ruler) return;
+    
+    ruler.innerHTML = '';
+    
+    // Labels to show
+    const dbSteps = [0, -3, -6, -9, -12, -18, -24, -36, -48, -60];
+    const drawnPositions = new Set();
+    
+    dbSteps.forEach(db => {
+        const amp = Math.pow(10, db / 20);
+        // Bipolar: positive and negative peaks
+        const offsets = db === 0 ? [amp, -amp] : [amp, -amp];
+        
+        offsets.forEach(offsetAmp => {
+            const y = centerY - (offsetAmp * waveHalf * vZoom);
+            
+            // Check bounds and prevent overlapping labels (min 12px apart)
+            if (y < 0 || y > containerH) return;
+            const posKey = Math.round(y / 12);
+            if (drawnPositions.has(posKey)) return;
+            drawnPositions.add(posKey);
+            
+            const tick = document.createElement('div');
+            tick.className = 'db-tick' + (db % 6 === 0 ? ' major' : '');
+            tick.style.top = `${y}px`;
+            tick.innerHTML = `<span>${db === 0 ? '0' : db}</span>`;
+            ruler.appendChild(tick);
+        });
+    });
+
+    // Add center -inf tick if it's visible and not crowded
+    const infKey = Math.round(centerY / 12);
+    if (!drawnPositions.has(infKey)) {
+        const infTick = document.createElement('div');
+        infTick.className = 'db-tick major';
+        infTick.style.top = `${centerY}px`;
+        infTick.innerHTML = '<span>-∞</span>';
+        ruler.appendChild(infTick);
+    }
 }
 
 // ═══════════════════════════════════════
@@ -538,7 +647,12 @@ function bindEvents() {
     });
 
     // Redraw on resize
-    window.addEventListener('resize', () => { requestAnimationFrame(drawThresholdLine); });
+    window.addEventListener('resize', () => { 
+        requestAnimationFrame(() => {
+            drawThresholdLine();
+            renderDbRuler();
+        });
+    });
 }
 
 // ═══════════════════════════════════════
@@ -1563,11 +1677,30 @@ async function handleExport() {
 
     // Media export (FFmpeg) — long-running, show progress
     exportBtn.disabled = true;
-    exportProgress.classList.remove('hidden');
-    exportProgress.textContent = t('export_encoding').replace('{format}', format.toUpperCase());
+    exportProgressContainer.classList.remove('hidden');
+    exportProgressBar.style.width = '0%';
+    exportProgressPercent.textContent = '0%';
+
+    let pollInterval = null;
+    const stopPolling = () => { if (pollInterval) { clearInterval(pollInterval); pollInterval = null; } };
 
     try {
+        // Start polling for progress
+        pollInterval = setInterval(async () => {
+            try {
+                const sres = await fetch(`/api/export-status/${currentSessionId}`);
+                if (sres.ok) {
+                    const sdata = await sres.json();
+                    const p = sdata.progress || 0;
+                    exportProgressBar.style.width = p + '%';
+                    exportProgressPercent.textContent = p + '%';
+                }
+            } catch (_) {}
+        }, 1500);
+
         const res = await fetch(`/api/export/media/${currentSessionId}?format=${format}`, { method: 'POST' });
+        stopPolling();
+
         if (!res.ok) {
             const { message, details } = await readFetchError(res, `${format.toUpperCase()} export failed`);
             throw Object.assign(new Error(message), { details });
@@ -1576,7 +1709,11 @@ async function handleExport() {
         if (!data.ok || !data.url) {
             throw new Error(data.error || 'Export server returned no file URL.');
         }
-        exportProgress.textContent = t('export_done_download');
+
+        // Success
+        exportProgressBar.style.width = '100%';
+        exportProgressPercent.textContent = '100%';
+        setTimeout(() => { exportProgressContainer.classList.add('hidden'); }, 3000);
 
         const a = document.createElement('a');
         a.href = data.url;
@@ -1584,9 +1721,10 @@ async function handleExport() {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        showToast(`${format.toUpperCase()} exported`);
+        showToast(t('status_done'));
     } catch (e) {
-        exportProgress.textContent = t('export_failed_status');
+        stopPolling();
+        exportProgressContainer.classList.add('hidden');
         showError({
             title:    `${format.toUpperCase()} export failed`,
             subtitle: item ? item.fileName : '',
@@ -1596,7 +1734,6 @@ async function handleExport() {
         });
     } finally {
         exportBtn.disabled = false;
-        setTimeout(() => exportProgress.classList.add('hidden'), 4000);
     }
 }
 

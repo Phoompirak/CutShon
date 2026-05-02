@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CutShon</string>
+    <string name="title_activity_main">CutShon</string>
+    <string name="package_name">com.cutshon.app</string>
+    <string name="custom_url_scheme">com.cutshon.app</string>
+</resources>

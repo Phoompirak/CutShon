@@ -22,6 +22,46 @@ const port = 3000;
     }
 });
 
+/**
+ * Auto-Cleanup: Deletes files in uploads/ and output/ older than 24 hours.
+ */
+function runCleanup() {
+    const DIRS = ['uploads', 'output'];
+    const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const now = Date.now();
+
+    console.log('[cleanup] Starting scheduled cleanup...');
+    let deletedCount = 0;
+
+    DIRS.forEach(dir => {
+        if (!fs.existsSync(dir)) return;
+        const files = fs.readdirSync(dir);
+        files.forEach(file => {
+            const filePath = path.join(dir, file);
+            try {
+                const stats = fs.statSync(filePath);
+                if (now - stats.mtimeMs > MAX_AGE_MS) {
+                    // Check if file is still in a session to be extra safe
+                    // (Actually, if it's > 24h old, the user is likely gone)
+                    fs.unlinkSync(filePath);
+                    deletedCount++;
+                }
+            } catch (err) {
+                // Ignore errors (file might be locked)
+            }
+        });
+    });
+
+    if (deletedCount > 0) {
+        console.log(`[cleanup] Successfully removed ${deletedCount} stale files.`);
+    }
+}
+
+// Run cleanup every hour
+setInterval(runCleanup, 60 * 60 * 1000);
+// Also run shortly after startup
+setTimeout(runCleanup, 5000);
+
 // Detect hardware encoder once at startup
 let hwEncoder = null;
 try {
@@ -286,12 +326,14 @@ app.post('/api/export/media/:sessionId', async (req, res) => {
 
     try {
         if (!fs.existsSync('output')) fs.mkdirSync('output', { recursive: true });
+        session.exportProgress = 0;
         const result = await MediaExporter.exportMedia(
             session.path,
             segments,
             format,
             session.originalName,
-            hwEncoder
+            hwEncoder,
+            (p) => { session.exportProgress = p; }
         );
         const fileUrl = `/api/download?path=${encodeURIComponent(result.path)}&name=${encodeURIComponent(result.filename)}`;
         res.json({ ok: true, url: fileUrl, filename: result.filename });
@@ -313,4 +355,17 @@ app.get('/api/download', (req, res) => {
     res.download(filePath, fileName);
 });
 
-app.listen(port, () => console.log(`CutShon server running at http://localhost:${port}`));
+/**
+ * Status endpoint for polling progress
+ */
+app.get('/api/export-status/:sessionId', (req, res) => {
+    const session = sessions[req.params.sessionId];
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    res.json({ progress: session.exportProgress || 0 });
+});
+
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(port, () => console.log(`CutShon server running at http://localhost:${port}`));
+}
+
+module.exports = app;
