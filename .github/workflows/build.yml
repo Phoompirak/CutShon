@@ -5,6 +5,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-windows:
     permissions:
@@ -16,7 +19,7 @@ jobs:
       - name: setup node
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: 20
           cache: 'npm'
 
       - name: install Rust stable
@@ -26,12 +29,26 @@ jobs:
         run: npm install
 
       - name: prepare ffmpeg sidecar
+        shell: pwsh
         run: |
-          if (!(Test-Path src-tauri/bin)) { New-Item -Path src-tauri/bin -ItemType Directory }
-          curl -L https://github.com/GyanD/codexffmpeg/releases/download/2022-12-04-git-6c814093d8/ffmpeg-2022-12-04-git-6c814093d8-essentials_build.zip -o ffmpeg.zip
-          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_temp
-          Copy-Item ffmpeg_temp/*/bin/ffmpeg.exe -Destination src-tauri/bin/ffmpeg-x86_64-pc-windows-msvc.exe -Force
-          Remove-Item ffmpeg.zip, ffmpeg_temp -Recurse -Force
+          $binDir = \"src-tauri/bin\"
+          if (!(Test-Path $binDir)) { New-Item -Path $binDir -ItemType Directory -Force }
+          $url = \"https://github.com/GyanD/codexffmpeg/releases/download/2022-12-04-git-6c814093d8/ffmpeg-2022-12-04-git-6c814093d8-essentials_build.zip\"
+          Write-Host \"Downloading FFmpeg...\"
+          curl.exe -L $url -o ffmpeg.zip
+          if (`$LASTEXITCODE -ne 0) { throw \"Download failed\" }
+          
+          Write-Host \"Extracting FFmpeg...\"
+          # Use tar.exe which is faster and more reliable than Expand-Archive on GitHub
+          tar.exe -xf ffmpeg.zip
+          
+          Write-Host \"Locating ffmpeg.exe...\"
+          `$ffmpegExe = Get-ChildItem -Path \"ffmpeg-*\" -Recurse -Filter \"ffmpeg.exe\" | Select-Object -First 1
+          if (`$null -eq `$ffmpegExe) { throw \"ffmpeg.exe not found in extracted files\" }
+          
+          Write-Host \"Copying to sidecar location...\"
+          Copy-Item `$ffmpegExe.FullName -Destination \"`$binDir/ffmpeg-x86_64-pc-windows-msvc.exe\" -Force
+          Write-Host \"FFmpeg sidecar ready!\"
 
       - name: build tauri app
         uses: tauri-apps/tauri-action@v0
@@ -40,6 +57,6 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: \"CutShon v__VERSION__\"
-          releaseBody: \"See the assets below for the Windows installer.\"
+          releaseBody: \"Download the Windows installer below.\"
           releaseDraft: true
           prerelease: false

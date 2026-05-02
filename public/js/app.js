@@ -426,20 +426,20 @@ function initVerticalZoom() {
         }
     }, { passive: false });
 
-    // WAVEFORM HOVER: Horizontal Zoom (Time)
+    // WAVEFORM HOVER: Horizontal Panning (Scroll)
     waveformWrapper?.addEventListener('wheel', (e) => {
         if (e.shiftKey) {
             e.preventDefault();
-            const slider = document.getElementById('zoom-slider');
-            if (!slider) return;
-
-            let val = parseFloat(slider.value);
-            // Invert delta logic for better feel in horizontal zoom (up = zoom in)
-            const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-            val = Math.min(parseFloat(slider.max), Math.max(parseFloat(slider.min), val * zoomFactor));
-            
-            slider.value = val;
-            applyZoom(val);
+            // Scroll the internal WaveSurfer container horizontally
+            const scrollable = document.querySelector('#waveform shadow-root div') || document.querySelector('#waveform > div');
+            if (scrollable) {
+                // deltaY is used for horizontal scroll to match standard editor behavior
+                scrollable.scrollLeft += e.deltaY;
+            } else if (wavesurfer && typeof wavesurfer.getScroll === 'function') {
+                // Fallback for newer WaveSurfer versions if direct DOM access is tricky
+                const current = wavesurfer.getScroll();
+                wavesurfer.setScroll(current + e.deltaY);
+            }
         }
     }, { passive: false });
 }
