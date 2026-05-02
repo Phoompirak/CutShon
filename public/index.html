@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CutShon — Professional Dead Air Cutter</title>
+    <meta name="description"
+        content="Professional dead air detection and cutting tool. Export EDL for Adobe Premiere Pro.">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=Outfit:wght@300;600;900&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/timeline.min.js"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/hover.min.js"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/minimap.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+</head>
+
+<body>
+    <div class="app-container">
+
+        <!-- HEADER -->
+        <header>
+            <div class="logo">
+                <span class="fire">🔥</span>
+                <h1>CutShon</h1>
+                <span class="pro-badge" data-i18n="header_pro">PRO</span>
+            </div>
+            <div class="header-center" id="file-info" style="display:none">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    style="color:var(--text-dim);flex-shrink:0">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                </svg>
+                <span id="file-name-display"></span>
+                <span class="pill" id="status-pill" data-i18n="status_ready">Ready</span>
+                <span id="queue-progress-badge" class="pill" style="display:none">Video — of —</span>
+            </div>
+            <div class="header-actions">
+                <div class="lang-switcher">
+                    <button class="lang-btn" data-lang="en">EN</button>
+                    <button class="lang-btn" data-lang="th">TH</button>
+                </div>
+                <button id="export-edl-btn" class="btn btn-outline" disabled style="font-size:11px;padding:7px 14px"
+                    data-i18n="btn_export_edl_small">Export EDL</button>
+            </div>
+        </header>
+
+        <!-- MAIN -->
+        <main>
+
+            <!-- LEFT: QUEUE RAIL -->
+            <aside id="queue-rail" class="queue-rail hidden">
+                <div class="queue-header">
+                    <h3><span data-i18n="queue_title">Queue</span> <span id="queue-count" class="queue-count">0</span>
+                    </h3>
+                    <button id="queue-add-btn" class="queue-add-btn" title="Add files">+</button>
+                </div>
+                <label class="queue-autoplay" title="Auto-play next video when current ends">
+                    <input type="checkbox" id="auto-advance-toggle" checked>
+                    <span data-i18n="auto_advance">Auto-advance</span>
+                </label>
+                <div class="queue-controls">
+                    <button id="processing-toggle-btn" class="btn btn-primary" disabled>Start</button>
+                </div>
+                <div class="queue-list" id="queue-list"></div>
+                <div class="queue-drop-hint" data-i18n="drop_hint">Drop more files anywhere</div>
+            </aside>
+
+            <!-- CENTER: VIEWPORT -->
+            <section class="viewport">
+
+                <!-- DROP ZONE -->
+                <div id="drop-zone" class="drop-zone">
+                    <div class="drop-content">
+                        <span class="drop-icon">🎬</span>
+                        <h2 data-i18n="drop_title">Drop your video or audio</h2>
+                        <p data-i18n="drop_subtitle">MP4 · MOV · MKV · MP3 · WAV · FLAC</p>
+                        <input type="file" id="file-input" accept="video/*,audio/*" multiple hidden>
+                        <button class="btn btn-outline" id="browse-btn" data-i18n="btn_browse">Browse Files</button>
+                    </div>
+                </div>
+
+                <!-- EDITOR -->
+                <div id="editor-view" class="editor-view hidden">
+
+                    <!-- VIDEO PREVIEW -->
+                    <div class="video-wrapper" id="video-wrapper">
+                        <video id="preview-video" playsinline></video>
+                        <div class="video-overlay-badge" id="skip-badge" data-i18n="skip_silence_badge">⏭ Skipping
+                            Silence</div>
+                    </div>
+
+                    <!-- DRAG RESIZER -->
+                    <div id="resizer" class="hidden">
+                        <div class="resizer-handle">
+                            <span></span>
+                        </div>
+                    </div>
+
+                    <!-- WAVEFORM -->
+                    <div id="waveform-wrap">
+                        <!-- Overview minimap strip (Adobe Audition style) -->
+                        <div id="waveform-overview"></div>
+                        <!-- Zoom control bar -->
+                        <div id="zoom-bar">
+                            <span class="zoom-label" data-i18n="zoom_label">Zoom</span>
+                            <input type="range" id="zoom-slider" min="1" max="100" step="0.1" value="1">
+                            <span id="zoom-level">Fit</span>
+                        </div>
+                        <div id="waveform-inner">
+                            <div id="waveform"></div>
+                            <!-- Threshold line overlay -->
+                            <canvas id="threshold-overlay"></canvas>
+                        </div>
+                        <div id="waveform-timeline-bar"></div>
+                    </div>
+
+                    <!-- TRANSPORT BAR -->
+                    <div class="transport-bar">
+                        <div class="transport-left">
+                            <button id="play-pause" class="btn btn-play"
+                                data-i18n-title="btn_play_pause_title">▶</button>
+                            <div class="time-display">
+                                <span id="current-time">0:00</span>
+                                <span class="sep">/</span>
+                                <span id="total-time">0:00</span>
+                            </div>
+                            <label class="toggle-label" data-i18n-title="skip_silence_toggle">
+                                <input type="checkbox" id="auto-skip-toggle" checked>
+                                <span data-i18n="skip_silence_toggle">Skip Silence</span>
+                            </label>
+                        </div>
+                        <div class="transport-right stats">
+                            <div class="stat-item">
+                                <label data-i18n="stat_original">Original</label>
+                                <span id="stat-original">—</span>
+                            </div>
+                            <div class="stat-item accent">
+                                <label data-i18n="stat_after">After Cut</label>
+                                <span id="stat-after">—</span>
+                            </div>
+                            <div class="stat-item">
+                                <label data-i18n="stat_saved">Saved</label>
+                                <span id="stat-reduced">—</span>
+                            </div>
+                            <div class="stat-item">
+                                <label data-i18n="stat_segments">Segments</label>
+                                <span id="stat-segs">—</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ANALYSIS PROGRESS (shown while analyzing) -->
+                    <div id="analysis-bar" class="analysis-bar hidden">
+                        <div class="analysis-fill" id="analysis-fill"></div>
+                        <span id="analysis-text" data-i18n="analyzing_text">Analyzing…</span>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- RIGHT: SIDEBAR -->
+            <aside class="sidebar">
+                <div class="sidebar-section">
+                    <h3 data-i18n="params_title">Parameters</h3>
+
+                    <div class="control-group">
+                        <label data-i18n="preset_label">Preset</label>
+                        <select id="preset-select">
+                            <option value="natural" data-i18n="preset_natural">🎙 Natural (Recommended)</option>
+                            <option value="aggressive" data-i18n="preset_aggressive">⚡ Aggressive</option>
+                            <option value="conservative" data-i18n="preset_conservative">🌿 Conservative</option>
+                            <option value="live" data-i18n="preset_live">🎤 Live / Noisy Room</option>
+                            <option value="quiet" data-i18n="preset_quiet">🔇 Very Quiet Room</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="label-row">
+                            <label data-i18n="threshold_label">Silence Threshold</label>
+                            <span class="val-badge" id="threshold-val">-35 dB</span>
+                        </div>
+                        <input type="range" id="threshold-range" min="-60" max="-10" step="1" value="-35">
+                        <div class="range-hint"><span data-i18n="hint_quiet">quiet</span><span
+                                data-i18n="hint_loud">loud</span></div>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="label-row">
+                            <label data-i18n="min_silence_label">Min Silence Duration</label>
+                            <span class="val-badge" id="min-silence-val">0.7 s</span>
+                        </div>
+                        <input type="range" id="min-silence-range" min="0.1" max="2.0" step="0.1" value="0.7">
+                        <div class="range-hint"><span data-i18n="hint_aggressive">aggressive</span><span
+                                data-i18n="hint_conservative">conservative</span></div>
+                    </div>
+
+                    <div class="two-col">
+                        <div class="control-group">
+                            <div class="label-row">
+                                <label data-i18n="pad_before_label">Pad Before</label>
+                                <span class="val-badge" id="padding-before-val">0.15 s</span>
+                            </div>
+                            <input type="range" id="padding-before-range" min="0" max="0.5" step="0.05" value="0.15">
+                        </div>
+                        <div class="control-group">
+                            <div class="label-row">
+                                <label data-i18n="pad_after_label">Pad After</label>
+                                <span class="val-badge" id="padding-after-val">0.15 s</span>
+                            </div>
+                            <input type="range" id="padding-after-range" min="0" max="0.5" step="0.05" value="0.15">
+                        </div>
+                    </div>
+
+                    <div class="two-col">
+                        <div class="control-group">
+                            <div class="label-row">
+                                <label data-i18n="merge_gap_label">Merge Gap</label>
+                                <span class="val-badge" id="merge-gap-val">0.3 s</span>
+                            </div>
+                            <input type="range" id="merge-gap-range" min="0" max="1.5" step="0.1" value="0.3">
+                        </div>
+                        <div class="control-group">
+                            <div class="label-row">
+                                <label data-i18n="min_clip_label">Min Clip</label>
+                                <span class="val-badge" id="min-clip-val">0.8 s</span>
+                            </div>
+                            <input type="range" id="min-clip-range" min="0.1" max="3.0" step="0.1" value="0.8">
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="label-row">
+                            <label data-i18n="transition_label">Transition Duration</label>
+                            <span class="val-badge" id="transition-val">0.0 s</span>
+                        </div>
+                        <input type="range" id="transition-range" min="0" max="2.0" step="0.1" value="0">
+                        <p style="font-size: 10px; color: var(--text-dim); margin-top: 4px;"
+                            data-i18n="transition_hint">Cross Dissolve (XML only)</p>
+                    </div>
+
+                    <button id="analyze-btn" class="btn btn-secondary btn-full" disabled data-i18n="btn_reanalyze">
+                        Re-Analyze
+                    </button>
+                </div>
+
+                <!-- EXPORT SECTION -->
+                <div class="sidebar-section">
+                    <h3 data-i18n="export_title">Export</h3>
+                    <div class="control-group">
+                        <div class="label-row"><label data-i18n="format_label">Format</label></div>
+                        <select id="export-format">
+                            <option value="xml" data-i18n="format_xml">Premiere Pro XML (v24-26)</option>
+                            <option value="edl" data-i18n="format_edl">EDL (Legacy)</option>
+                            <option value="mp4" data-i18n="format_mp4">MP4 Video (H.264)</option>
+                            <option value="mov" data-i18n="format_mov">MOV (Transparent / ProRes)</option>
+                            <option value="mp3" data-i18n="format_mp3">MP3 Audio</option>
+                        </select>
+                    </div>
+                    <button id="export-btn" class="btn btn-primary btn-full" disabled data-i18n="btn_export_now">
+                        Export Now
+                    </button>
+                    <!-- Real-time export progress -->
+                    <div id="export-progress" class="hidden"
+                        style="margin-top: 12px; font-size: 11px; color: var(--primary); text-align: center;">
+                        Encoding: 0%
+                    </div>
+                </div>
+
+                <div class="sidebar-footer">
+                    <p data-i18n="footer_text">CutShon — FFmpeg + EDL workflow</p>
+                </div>
+            </aside>
+
+        </main>
+
+        <!-- GLOBAL LOADER -->
+        <div id="loader" class="loader-overlay hidden">
+            <div class="loader-content">
+                <div class="spinner"></div>
+                <p id="loader-text" data-i18n="loader_working">Working…</p>
+            </div>
+        </div>
+
+        <!-- ERROR MODAL -->
+        <div id="error-modal" class="error-modal hidden" role="alertdialog" aria-modal="true">
+            <div class="error-card" role="document">
+                <div class="error-header">
+                    <div class="error-icon">⚠</div>
+                    <div>
+                        <h3 id="error-title" data-i18n="error_title">Something went wrong</h3>
+                        <p id="error-subtitle"></p>
+                    </div>
+                </div>
+                <p id="error-message"></p>
+                <details id="error-details" class="error-details">
+                    <summary>Technical details</summary>
+                    <pre id="error-stack"></pre>
+                </details>
+                <div class="error-actions">
+                    <button id="error-copy-btn" class="btn btn-secondary" data-i18n="btn_copy_details">Copy
+                        Details</button>
+                    <button id="error-retry-btn" class="btn btn-secondary hidden" data-i18n="btn_retry">Retry</button>
+                    <button id="error-close-btn" class="btn btn-primary" data-i18n="btn_close">Close</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+    <script src="js/i18n.js"></script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>
