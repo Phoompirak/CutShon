@@ -82,7 +82,10 @@ const translations = {
         format_edl: "EDL (Legacy)",
         format_mp4: "MP4 Video (H.264)",
         format_mov: "MOV (Transparent / ProRes)",
-        format_mp3: "MP3 Audio"
+        format_mp3: "MP3 Audio",
+        nav_editor: "Editor",
+        nav_queue: "Queue",
+        nav_params: "Params"
     },
     th: {
         header_pro: "โปร",
@@ -165,7 +168,10 @@ const translations = {
         format_edl: "EDL (Legacy)",
         format_mp4: "วิดีโอ MP4 (H.264)",
         format_mov: "MOV (โปร่งใส / ProRes)",
-        format_mp3: "เสียง MP3"
+        format_mp3: "เสียง MP3",
+        nav_editor: "เครื่องมือ",
+        nav_queue: "คิวไฟล์",
+        nav_params: "ตั้งค่า"
     }
 };
 

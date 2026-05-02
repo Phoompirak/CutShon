@@ -128,6 +128,42 @@ function init() {
     bindEvents();
     initResizer();
     setupAutoAdvance();
+    initMobileNav();
+}
+
+function initMobileNav() {
+    const tabs = document.querySelectorAll('.nav-tab');
+    const queueRail = document.getElementById('queue-rail');
+    const sidebar = document.querySelector('.sidebar');
+    const viewport = document.querySelector('.viewport');
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.tab;
+            
+            // Update active tab button
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            // Toggle visibility
+            if (target === 'queue') {
+                queueRail.classList.add('active');
+                sidebar.classList.remove('active');
+            } else if (target === 'params') {
+                sidebar.classList.add('active');
+                queueRail.classList.remove('active');
+            } else {
+                queueRail.classList.remove('active');
+                sidebar.classList.remove('active');
+            }
+
+            // Close sidebars when editor is clicked (on mobile)
+            if (target === 'editor') {
+                queueRail.classList.remove('active');
+                sidebar.classList.remove('active');
+            }
+        });
+    });
 }
 
 function initPlyr() {
@@ -854,6 +890,12 @@ async function setActiveIndex(idx) {
     fileInfo.style.display = 'flex';
     fileNameDisplay.textContent = item.fileName;
     videoWrapper.classList.toggle('audio-only', item.isAudio);
+
+    // Auto-switch to editor tab on mobile
+    if (window.innerWidth <= 850) {
+        const editorTab = document.querySelector('.nav-tab[data-tab="editor"]');
+        if (editorTab) editorTab.click();
+    }
 
     // Load video element
     if (previewVideo.src !== location.origin + item.fileUrl) {
