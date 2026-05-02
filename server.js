@@ -102,6 +102,22 @@ function loadSessions() {
     try {
         if (fs.existsSync(SESSIONS_FILE)) {
             sessions = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
+            
+            // REPAIR ENCODING for existing sessions
+            Object.keys(sessions).forEach(id => {
+                const s = sessions[id];
+                if (s.originalName) {
+                    try {
+                        // Check if it's already "broken" UTF-8 (interpreted as Latin1)
+                        const test = Buffer.from(s.originalName, 'latin1').toString('utf8');
+                        // Simple heuristic: if it contains Thai characters or emojis after conversion, use it
+                        if (/[ก-ฮ]/.test(test) || /[\u{1F300}-\u{1F9FF}]/u.test(test)) {
+                            s.originalName = test;
+                        }
+                    } catch (e) {}
+                }
+            });
+
             console.log(`[startup] Loaded ${Object.keys(sessions).length} sessions from disk.`);
         }
     } catch (err) {
@@ -166,20 +182,29 @@ async function ensurePlayable(filePath) {
 app.post('/api/upload', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     
+    // FIX ENCODING: Multer often mangles UTF-8 filenames as Latin1
+    let originalName = req.file.originalname;
+    try {
+        // Check if it looks like mangled UTF-8
+        originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+    } catch (e) {
+        originalName = req.file.originalname;
+    }
+
     // AUTO-REPAIR STEP
     const finalPath = await ensurePlayable(req.file.path);
     const finalFilename = path.basename(finalPath);
 
     const sessionId = path.parse(req.file.filename).name;
     sessions[sessionId] = {
-        originalName: req.file.originalname,
+        originalName: originalName,
         path: finalPath,
         fileUrl: `/uploads/${finalFilename}`,
         id: sessionId,
         settings: {}
     };
     saveSessions();
-    res.json({ sessionId, filename: req.file.originalname, fileUrl: sessions[sessionId].fileUrl });
+    res.json({ sessionId, filename: originalName, fileUrl: sessions[sessionId].fileUrl });
 });
 
 /**

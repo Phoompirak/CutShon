@@ -28,28 +28,19 @@ jobs:
       - name: prepare ffmpeg sidecar
         shell: pwsh
         run: |
-          # Get absolute path of the repo root
           $repoRoot = Get-Location
-          $binDir = Join-Path `$repoRoot \"src-tauri\bin\"
+          $binDir = Join-Path $repoRoot 'src-tauri/bin'
           
-          Write-Host \"Ensuring directory exists: `$binDir\"
-          if (!(Test-Path `$binDir)) { New-Item -Path `$binDir -ItemType Directory -Force }
+          if (!(Test-Path $binDir)) { New-Item -Path $binDir -ItemType Directory -Force }
           
-          $url = \"https://github.com/GyanD/codexffmpeg/releases/download/2022-12-04-git-6c814093d8/ffmpeg-2022-12-04-git-6c814093d8-essentials_build.zip\"
-          Write-Host \"Downloading FFmpeg...\"
-          curl.exe -L `$url -o ffmpeg.zip
-          
-          Write-Host \"Extracting FFmpeg...\"
+          $url = 'https://github.com/GyanD/codexffmpeg/releases/download/2022-12-04-git-6c814093d8/ffmpeg-2022-12-04-git-6c814093d8-essentials_build.zip'
+          curl.exe -L $url -o ffmpeg.zip
           tar.exe -xf ffmpeg.zip
           
-          Write-Host \"Locating ffmpeg.exe...\"
-          `$ffmpegExe = Get-ChildItem -Path \"ffmpeg-*\" -Recurse -Filter \"ffmpeg.exe\" | Select-Object -First 1
-          if (`$null -eq `$ffmpegExe) { throw \"ffmpeg.exe not found\" }
-          
-          `$destFile = Join-Path `$binDir \"ffmpeg-x86_64-pc-windows-msvc.exe\"
-          Write-Host \"Copying `$(`$ffmpegExe.FullName) to `$destFile\"
-          Copy-Item `$ffmpegExe.FullName -Destination `$destFile -Force
-          Write-Host \"FFmpeg sidecar ready!\"
+          $ffmpegExe = Get-ChildItem -Path 'ffmpeg-*' -Recurse -Filter 'ffmpeg.exe' | Select-Object -First 1
+          $destFile = Join-Path $binDir 'ffmpeg-x86_64-pc-windows-msvc.exe'
+          Copy-Item $ffmpegExe.FullName -Destination $destFile -Force
+          Write-Host 'FFmpeg sidecar ready!'
 
       - name: build tauri app
         uses: tauri-apps/tauri-action@v0

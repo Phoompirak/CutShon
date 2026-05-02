@@ -126,6 +126,8 @@ let vZoom = 1.0;
 const MAX_VZOOM = 50.0;
 const MIN_VZOOM = 0.5;
 
+let exportPollInterval = null;
+
 // ═══════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════
@@ -995,6 +997,14 @@ async function setActiveIndex(idx) {
         prev.keepSegments    = keepSegments.slice();
     }
 
+    // Reset UI state from previous item
+    if (exportPollInterval) {
+        clearInterval(exportPollInterval);
+        exportPollInterval = null;
+    }
+    exportProgressContainer.classList.add('hidden');
+    if (wsRegions) wsRegions.clearRegions();
+
     activeIndex = idx;
     currentSessionId = item.sessionId;
 
@@ -1681,12 +1691,11 @@ async function handleExport() {
     exportProgressBar.style.width = '0%';
     exportProgressPercent.textContent = '0%';
 
-    let pollInterval = null;
-    const stopPolling = () => { if (pollInterval) { clearInterval(pollInterval); pollInterval = null; } };
+    if (exportPollInterval) clearInterval(exportPollInterval);
 
     try {
         // Start polling for progress
-        pollInterval = setInterval(async () => {
+        exportPollInterval = setInterval(async () => {
             try {
                 const sres = await fetch(`/api/export-status/${currentSessionId}`);
                 if (sres.ok) {
@@ -1699,7 +1708,11 @@ async function handleExport() {
         }, 1500);
 
         const res = await fetch(`/api/export/media/${currentSessionId}?format=${format}`, { method: 'POST' });
-        stopPolling();
+        
+        if (exportPollInterval) {
+            clearInterval(exportPollInterval);
+            exportPollInterval = null;
+        }
 
         if (!res.ok) {
             const { message, details } = await readFetchError(res, `${format.toUpperCase()} export failed`);
@@ -1723,7 +1736,10 @@ async function handleExport() {
         document.body.removeChild(a);
         showToast(t('status_done'));
     } catch (e) {
-        stopPolling();
+        if (exportPollInterval) {
+            clearInterval(exportPollInterval);
+            exportPollInterval = null;
+        }
         exportProgressContainer.classList.add('hidden');
         showError({
             title:    `${format.toUpperCase()} export failed`,
