@@ -28,22 +28,28 @@ jobs:
       - name: prepare ffmpeg sidecar
         shell: pwsh
         run: |
-          $binDir = 'src-tauri/bin'
-          if (!(Test-Path $binDir)) { New-Item -Path $binDir -ItemType Directory -Force }
-          $url = 'https://github.com/GyanD/codexffmpeg/releases/download/2022-12-04-git-6c814093d8/ffmpeg-2022-12-04-git-6c814093d8-essentials_build.zip'
-          Write-Host 'Downloading FFmpeg...'
-          curl.exe -L $url -o ffmpeg.zip
+          # Get absolute path of the repo root
+          $repoRoot = Get-Location
+          $binDir = Join-Path `$repoRoot \"src-tauri\bin\"
           
-          Write-Host 'Extracting FFmpeg...'
+          Write-Host \"Ensuring directory exists: `$binDir\"
+          if (!(Test-Path `$binDir)) { New-Item -Path `$binDir -ItemType Directory -Force }
+          
+          $url = \"https://github.com/GyanD/codexffmpeg/releases/download/2022-12-04-git-6c814093d8/ffmpeg-2022-12-04-git-6c814093d8-essentials_build.zip\"
+          Write-Host \"Downloading FFmpeg...\"
+          curl.exe -L `$url -o ffmpeg.zip
+          
+          Write-Host \"Extracting FFmpeg...\"
           tar.exe -xf ffmpeg.zip
           
-          Write-Host 'Locating ffmpeg.exe...'
-          $ffmpegExe = Get-ChildItem -Path 'ffmpeg-*' -Recurse -Filter 'ffmpeg.exe' | Select-Object -First 1
-          if ($null -eq $ffmpegExe) { throw 'ffmpeg.exe not found' }
+          Write-Host \"Locating ffmpeg.exe...\"
+          `$ffmpegExe = Get-ChildItem -Path \"ffmpeg-*\" -Recurse -Filter \"ffmpeg.exe\" | Select-Object -First 1
+          if (`$null -eq `$ffmpegExe) { throw \"ffmpeg.exe not found\" }
           
-          Write-Host \"Copying to: $binDir\"
-          Copy-Item $ffmpegExe.FullName -Destination \"$binDir/ffmpeg-x86_64-pc-windows-msvc.exe\" -Force
-          Write-Host 'FFmpeg sidecar ready!'
+          `$destFile = Join-Path `$binDir \"ffmpeg-x86_64-pc-windows-msvc.exe\"
+          Write-Host \"Copying `$(`$ffmpegExe.FullName) to `$destFile\"
+          Copy-Item `$ffmpegExe.FullName -Destination `$destFile -Force
+          Write-Host \"FFmpeg sidecar ready!\"
 
       - name: build tauri app
         uses: tauri-apps/tauri-action@v0
