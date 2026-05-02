@@ -435,17 +435,27 @@ function bindEvents() {
         }
     });
 
-    previewVideo.addEventListener('play',  () => {
+    const onPlay = () => {
         playBtn.textContent = '⏸';
         ensureWebAudio();
         scheduleNextJcTick();
-    });
-    previewVideo.addEventListener('pause', () => {
+    };
+    const onPause = () => {
         playBtn.textContent = '▶';
         if (jumpRAF) { cancelAnimationFrame(jumpRAF); jumpRAF = null; }
         jcResetFade();
-    });
-    previewVideo.addEventListener('seeking', jcResetFade);
+    };
+    const onSeeking = () => { jcResetFade(); };
+
+    if (plyrPlayer) {
+        plyrPlayer.on('play', onPlay);
+        plyrPlayer.on('pause', onPause);
+        plyrPlayer.on('seeking', onSeeking);
+    } else {
+        previewVideo.addEventListener('play', onPlay);
+        previewVideo.addEventListener('pause', onPause);
+        previewVideo.addEventListener('seeking', onSeeking);
+    }
     autoSkipToggle.addEventListener('change', () => { jcResetFade(); scheduleNextJcTick(); });
 
     analyzeBtn.addEventListener('click', () => {
@@ -1289,9 +1299,37 @@ async function runAnalysis() {
 // ═══════════════════════════════════════
 //  JUMP-CUT PREVIEW ENGINE
 //  Drives playback from keepSegments (matching export precision).
-//  Uses requestAnimationFrame for sub-frame timing (~16ms vs 250ms timeupdate),
-//  CSS opacity fade + WebAudio gain ramp for seamless audio/video transitions.
-// ═══════════════════════════════════════
+let webAudio = { ctx: null, src: null, gain: null, attachedMedia: null };
+
+function getActiveMedia() {
+    return (plyrPlayer && plyrPlayer.media) ? plyrPlayer.media : document.getElementById('preview-video');
+}
+
+function ensureWebAudio() {
+    const media = getActiveMedia();
+    if (!media) return;
+    
+    // If media changed, we must re-attach
+    if (webAudio.attachedMedia !== media) {
+        try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) { webAudio.attachedMedia = media; return; }
+            if (!webAudio.ctx) webAudio.ctx = new Ctx();
+            
+            // Re-create source node for the new element
+            webAudio.src = webAudio.ctx.createMediaElementSource(media);
+            if (!webAudio.gain) {
+                webAudio.gain = webAudio.ctx.createGain();
+                webAudio.gain.gain.value = 1;
+            }
+            webAudio.src.connect(webAudio.gain).connect(webAudio.ctx.destination);
+            webAudio.attachedMedia = media;
+        } catch (_) {
+            webAudio.attachedMedia = media; 
+        }
+    }
+}
+
 const JC_FADE_LEAD_SEC = 0.040;   // begin fade 40ms before cut
 const JC_FADE_DUR_SEC  = 0.028;   // 28ms ramp duration (~2 frames @60Hz)
 const JC_SEEK_SAFETY   = 0.004;   // 4ms safety margin past segment start
@@ -1300,7 +1338,6 @@ let jumpRAF = null;
 let jcFadingOut = false;
 let jcScheduledJumpAt = -1;
 let jcScheduledJumpTo = -1;
-let webAudio = { ctx: null, src: null, gain: null, attached: false };
 
 function findCurrentKeep(t) {
     for (let i = 0; i < keepSegments.length; i++) {
@@ -1315,20 +1352,6 @@ function findNextKeep(afterT) {
         if (keepSegments[i].start > afterT - 0.002) return keepSegments[i];
     }
     return null;
-}
-
-function ensureWebAudio() {
-    if (webAudio.attached || !previewVideo) return;
-    try {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!Ctx) { webAudio.attached = true; return; } // no fallback, just give up
-        webAudio.ctx = new Ctx();
-        webAudio.src = webAudio.ctx.createMediaElementSource(previewVideo);
-        webAudio.gain = webAudio.ctx.createGain();
-        webAudio.gain.gain.value = 1;
-        webAudio.src.connect(webAudio.gain).connect(webAudio.ctx.destination);
-        webAudio.attached = true;
-    } catch (_) { webAudio.attached = true; webAudio.gain = null; }
 }
 
 function rampGain(target, durationSec) {
@@ -1354,7 +1377,8 @@ function jcResetFade() {
 }
 
 function performJump(targetTime) {
-    previewVideo.currentTime = Math.max(0, targetTime + JC_SEEK_SAFETY);
+    const media = getActiveMedia();
+    if (media) media.currentTime = Math.max(0, targetTime + JC_SEEK_SAFETY);
     requestAnimationFrame(() => {
         applyVisualFade(false);
         rampGain(1, JC_FADE_DUR_SEC);
@@ -1366,16 +1390,17 @@ function performJump(targetTime) {
 
 function jumpCutTick() {
     jumpRAF = null;
-    if (previewVideo.paused) return; // stop loop on pause
+    const media = getActiveMedia();
+    if (!media || media.paused) return; 
+    
     if (!autoSkipToggle.checked || !keepSegments.length) {
         scheduleNextJcTick();
         return;
     }
-    const t = previewVideo.currentTime;
+    const t = media.currentTime;
     const cur = findCurrentKeep(t);
 
     if (!cur) {
-        // Inside a silence/gap or before first segment — jump to next keep
         const next = findNextKeep(t);
         if (next) {
             ensureWebAudio();
@@ -1384,7 +1409,8 @@ function jumpCutTick() {
             showSkipBadge();
             performJump(next.start);
         } else if (keepSegments.length > 0 && t > keepSegments[keepSegments.length - 1].end - 0.05) {
-            previewVideo.pause();
+            if (plyrPlayer) plyrPlayer.pause();
+            else media.pause();
             return;
         }
         scheduleNextJcTick();
@@ -1395,7 +1421,6 @@ function jumpCutTick() {
     const next = keepSegments[cur.idx + 1];
 
     if (next && !jcFadingOut && t >= segEnd - JC_FADE_LEAD_SEC) {
-        // Begin fade-out; jump exactly when we cross segEnd
         ensureWebAudio();
         jcFadingOut = true;
         jcScheduledJumpAt = segEnd;
@@ -1408,7 +1433,8 @@ function jumpCutTick() {
     if (jcFadingOut && t >= jcScheduledJumpAt) {
         performJump(jcScheduledJumpTo);
     } else if (!next && t >= segEnd - 0.005) {
-        previewVideo.pause();
+        if (plyrPlayer) plyrPlayer.pause();
+        else media.pause();
         return;
     }
 
@@ -1417,7 +1443,8 @@ function jumpCutTick() {
 
 function scheduleNextJcTick() {
     if (jumpRAF) return;
-    if (!previewVideo.paused) jumpRAF = requestAnimationFrame(jumpCutTick);
+    const media = getActiveMedia();
+    if (media && !media.paused) jumpRAF = requestAnimationFrame(jumpCutTick);
 }
 
 function showSkipBadge() {
