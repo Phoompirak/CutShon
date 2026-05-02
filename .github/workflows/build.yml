@@ -5,9 +5,6 @@ on:
       - 'v*'
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build-windows:
     permissions:
@@ -31,32 +28,30 @@ jobs:
       - name: prepare ffmpeg sidecar
         shell: pwsh
         run: |
-          $binDir = \"src-tauri/bin\"
+          $binDir = 'src-tauri/bin'
           if (!(Test-Path $binDir)) { New-Item -Path $binDir -ItemType Directory -Force }
-          $url = \"https://github.com/GyanD/codexffmpeg/releases/download/2022-12-04-git-6c814093d8/ffmpeg-2022-12-04-git-6c814093d8-essentials_build.zip\"
-          Write-Host \"Downloading FFmpeg...\"
+          $url = 'https://github.com/GyanD/codexffmpeg/releases/download/2022-12-04-git-6c814093d8/ffmpeg-2022-12-04-git-6c814093d8-essentials_build.zip'
+          Write-Host 'Downloading FFmpeg...'
           curl.exe -L $url -o ffmpeg.zip
-          if (`$LASTEXITCODE -ne 0) { throw \"Download failed\" }
           
-          Write-Host \"Extracting FFmpeg...\"
-          # Use tar.exe which is faster and more reliable than Expand-Archive on GitHub
+          Write-Host 'Extracting FFmpeg...'
           tar.exe -xf ffmpeg.zip
           
-          Write-Host \"Locating ffmpeg.exe...\"
-          `$ffmpegExe = Get-ChildItem -Path \"ffmpeg-*\" -Recurse -Filter \"ffmpeg.exe\" | Select-Object -First 1
-          if (`$null -eq `$ffmpegExe) { throw \"ffmpeg.exe not found in extracted files\" }
+          Write-Host 'Locating ffmpeg.exe...'
+          $ffmpegExe = Get-ChildItem -Path 'ffmpeg-*' -Recurse -Filter 'ffmpeg.exe' | Select-Object -First 1
+          if ($null -eq $ffmpegExe) { throw 'ffmpeg.exe not found' }
           
-          Write-Host \"Copying to sidecar location...\"
-          Copy-Item `$ffmpegExe.FullName -Destination \"`$binDir/ffmpeg-x86_64-pc-windows-msvc.exe\" -Force
-          Write-Host \"FFmpeg sidecar ready!\"
+          Write-Host \"Copying to: $binDir\"
+          Copy-Item $ffmpegExe.FullName -Destination \"$binDir/ffmpeg-x86_64-pc-windows-msvc.exe\" -Force
+          Write-Host 'FFmpeg sidecar ready!'
 
       - name: build tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: \"CutShon v__VERSION__\"
-          releaseBody: \"Download the Windows installer below.\"
-          releaseDraft: true
+          tagName: ${{ github.ref_name }}
+          releaseName: 'CutShon ${{ github.ref_name }}'
+          releaseBody: 'Download the Windows installer below.'
+          releaseDraft: false
           prerelease: false
