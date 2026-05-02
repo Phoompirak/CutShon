@@ -27,10 +27,11 @@ jobs:
 
       - name: prepare ffmpeg sidecar
         run: |
-          mkdir -p src-tauri/bin
+          if (!(Test-Path src-tauri/bin)) { New-Item -Path src-tauri/bin -ItemType Directory }
           curl -L https://github.com/GyanD/codexffmpeg/releases/download/2022-12-04-git-6c814093d8/ffmpeg-2022-12-04-git-6c814093d8-essentials_build.zip -o ffmpeg.zip
-          7z x ffmpeg.zip
-          cp ffmpeg-*/bin/ffmpeg.exe src-tauri/bin/ffmpeg-x86_64-pc-windows-msvc.exe
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_temp
+          Copy-Item ffmpeg_temp/*/bin/ffmpeg.exe -Destination src-tauri/bin/ffmpeg-x86_64-pc-windows-msvc.exe -Force
+          Remove-Item ffmpeg.zip, ffmpeg_temp -Recurse -Force
 
       - name: build tauri app
         uses: tauri-apps/tauri-action@v0

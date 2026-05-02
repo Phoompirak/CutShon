@@ -45,6 +45,12 @@ function runCleanup() {
                     // (Actually, if it's > 24h old, the user is likely gone)
                     fs.unlinkSync(filePath);
                     deletedCount++;
+                    
+                    // Also cleanup session from memory/disk if its main file is gone
+                    const sid = path.parse(file).name;
+                    if (sessions[sid]) {
+                        delete sessions[sid];
+                    }
                 }
             } catch (err) {
                 // Ignore errors (file might be locked)
@@ -53,7 +59,8 @@ function runCleanup() {
     });
 
     if (deletedCount > 0) {
-        console.log(`[cleanup] Successfully removed ${deletedCount} stale files.`);
+        saveSessions();
+        console.log(`[cleanup] Successfully removed ${deletedCount} stale files and sessions.`);
     }
 }
 
@@ -86,7 +93,32 @@ const storage = multer.diskStorage({
     }
 });
 const upload = multer({ storage });
-const sessions = {};
+
+// Session Persistence
+const SESSIONS_FILE = 'sessions.json';
+let sessions = {};
+
+function loadSessions() {
+    try {
+        if (fs.existsSync(SESSIONS_FILE)) {
+            sessions = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
+            console.log(`[startup] Loaded ${Object.keys(sessions).length} sessions from disk.`);
+        }
+    } catch (err) {
+        console.error('[startup] Failed to load sessions:', err.message);
+        sessions = {};
+    }
+}
+
+function saveSessions() {
+    try {
+        fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2), 'utf8');
+    } catch (err) {
+        console.error('[sessions] Save failed:', err.message);
+    }
+}
+
+loadSessions();
 
 /**
  * Helper to check if a file has non-standard audio (like fpcm in mp4)
@@ -146,6 +178,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
         id: sessionId,
         settings: {}
     };
+    saveSessions();
     res.json({ sessionId, filename: req.file.originalname, fileUrl: sessions[sessionId].fileUrl });
 });
 
@@ -199,6 +232,7 @@ app.post('/api/settings', (req, res) => {
     const session = sessions[sessionId];
     if (!session) return res.status(404).json({ error: 'Session not found' });
     session.settings = settings || {};
+    saveSessions();
     res.json({ ok: true });
 });
 
@@ -237,6 +271,7 @@ app.get('/api/analyze-stream/:sessionId', (req, res) => {
     detector.detect(session.path)
         .then(result => {
             session.lastResult = result;
+            saveSessions();
             res.write(`data: ${JSON.stringify({ type: 'complete', data: result })}\n\n`);
             res.end();
         })
