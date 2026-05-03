@@ -23,7 +23,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: install dependencies
-        run: npm install
+        run: npm ci
 
       - name: prepare ffmpeg sidecar
         shell: pwsh
