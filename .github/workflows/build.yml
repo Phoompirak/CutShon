@@ -38,6 +38,16 @@ jobs:
           $destFile = Join-Path $binDir "ffmpeg-x86_64-pc-windows-msvc.exe"
           Copy-Item $ffmpegExe.FullName -Destination $destFile -Force
 
+      - name: prepare ffprobe sidecar
+        shell: pwsh
+        run: |
+          $repoRoot = Get-Location
+          $binDir = Join-Path $repoRoot "src-tauri/bin"
+          $ffprobeExe = Get-ChildItem -Path "node_modules" -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
+          if ($ffprobeExe) {
+            Copy-Item $ffprobeExe.FullName -Destination (Join-Path $binDir "ffprobe-x86_64-pc-windows-msvc.exe") -Force
+          }
+
       - name: build tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -45,9 +55,22 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "CutShon ${{ github.ref_name }}"
-          releaseBody: "Download the Windows installer below."
+          releaseBody: "Download CutShon for Windows and Android below."
           releaseDraft: false
           prerelease: false
+
+      - name: build portable exe
+        shell: pwsh
+        run: |
+          npm run build:server
+          npx pkg server.js --target node18-win-x64 --output dist/CutShon-Server-Portable.exe
+
+      - name: upload portable exe to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/CutShon-Server-Portable.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-android:
     permissions:
@@ -83,12 +106,14 @@ jobs:
           chmod +x gradlew
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
           ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/CutShon_${{ github.ref_name }}.apk
 
       - name: upload apk to release
         uses: softprops/action-gh-release@v1
         with:
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          files: android/app/build/outputs/apk/debug/CutShon_${{ github.ref_name }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
 
