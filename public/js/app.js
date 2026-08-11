@@ -885,12 +885,13 @@ async function readFetchError(res, fallback) {
     try {
         const ct = res.headers.get('content-type') || '';
         if (ct.includes('application/json')) {
-            const j = await res.json();
-            return { message: j.error || fallback, details: j.stack || JSON.stringify(j, null, 2) };
+            const j = await res.json().catch(() => null);
+            if (j) return { message: j.error || fallback, details: j.stack || JSON.stringify(j, null, 2) };
         }
-        body = await res.text();
+        body = await res.text().catch(() => '');
     } catch (_) {}
-    return { message: fallback + ` (HTTP ${res.status})`, details: body.slice(0, 2000) };
+    const cleanBody = body.replace(/<[^>]*>/g, ' ').trim().slice(0, 300);
+    return { message: fallback + ` (HTTP ${res.status})` + (cleanBody ? `: ${cleanBody}` : ''), details: body.slice(0, 2000) };
 }
 
 // ═══════════════════════════════════════
@@ -1046,7 +1047,10 @@ async function processItem(item) {
             const { message, details } = await readFetchError(res, t('err_upload_failed'));
             throw Object.assign(new Error(message), { details });
         }
-        const data = await res.json();
+        const data = await res.json().catch(async () => {
+            const txt = await res.text().catch(() => '');
+            throw new Error(t('err_upload_failed') + `: Server returned invalid response. (${txt.slice(0, 100)})`);
+        });
         item.sessionId = data.sessionId;
         item.fileUrl   = data.fileUrl;
 
@@ -1065,7 +1069,10 @@ async function processItem(item) {
             const { message, details } = await readFetchError(wvRes, t('err_waveform_failed'));
             throw Object.assign(new Error(message), { details });
         }
-        const wvData = await wvRes.json();
+        const wvData = await wvRes.json().catch(async () => {
+            const txt = await wvRes.text().catch(() => '');
+            throw new Error(t('err_waveform_failed') + `: Server returned invalid response. (${txt.slice(0, 100)})`);
+        });
         item.peaks = wvData.peaks;
 
         item.status = 'ready';
