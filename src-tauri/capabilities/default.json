@@ -13,6 +13,19 @@
         {
           "name": "bin/ffmpeg",
           "sidecar": true
+        },
+        {
+          "name": "bin/server",
+          "sidecar": true
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "bin/server",
+          "sidecar": true
         }
       ]
     }

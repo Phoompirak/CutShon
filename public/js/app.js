@@ -1,3 +1,26 @@
+// Added API_BASE logic
+let API_BASE = '';
+window.addEventListener('DOMContentLoaded', async () => {
+    if (window.location.protocol === 'tauri:') {
+        let found = false;
+        for (let port = 3000; port < 3010; port++) {
+            try {
+                const url = `http://127.0.0.1:${port}`;
+                const r = await fetch(`${url}/api/ping`);
+                if (r.ok) { API_BASE = url; found = true; break; }
+            } catch(e) {}
+        }
+        if (!found && typeof showError === 'function') {
+            showError({
+                title: 'Connection Failed',
+                subtitle: 'Cannot connect to background server',
+                message: 'The local API server failed to start or is blocked by a firewall. Please check the log files located in %LocalAppData%\\CutShon\\logs.',
+                details: 'Ports 3000-3009 were scanned but no response was received.'
+            });
+        }
+    }
+});
+
 // ═══════════════════════════════════════
 //  CutShon — app.js
 //  Server-side peaks waveform + real-time silence highlight
@@ -139,6 +162,28 @@ function init() {
     initMobileNav();
     initVerticalZoom();
     renderDbRuler();
+    initToggleSwitches();
+}
+
+// ── Toggle switches: sync checkbox ↔ .toggle-switch visual ──
+function initToggleSwitches() {
+    document.querySelectorAll('.toggle-label').forEach(label => {
+        const checkbox = label.querySelector('input[type="checkbox"]');
+        const visual = label.querySelector('.toggle-switch');
+        if (!checkbox || !visual) return;
+
+        const sync = () => visual.classList.toggle('active', checkbox.checked);
+        checkbox.addEventListener('change', sync);
+        sync();
+
+        // Click on the whole label toggles the checkbox
+        label.addEventListener('click', (e) => {
+            if (e.target === visual) {
+                checkbox.checked = !checkbox.checked;
+                checkbox.dispatchEvent(new Event('change'));
+            }
+        });
+    });
 }
 
 function initMobileNav() {
@@ -190,15 +235,18 @@ function initPlyr() {
 
     // Sync Plyr -> WaveSurfer
     plyrPlayer.on('seeking', () => {
-        // WaveSurfer native media sync might need a nudge if paused
         if (wavesurfer && !plyrPlayer.playing) {
             wavesurfer.setTime(plyrPlayer.currentTime);
         }
     });
     plyrPlayer.on('ratechange', () => {
-        // Optional: Sync playback rate to wavesurfer if we want audio to match
         if (wavesurfer) wavesurfer.setPlaybackRate(plyrPlayer.speed);
     });
+
+    // Inject ARIA after Plyr renders its DOM
+    setTimeout(injectPlyrAria, 500);
+    // Re-inject after source changes
+    plyrPlayer.on('ready', () => setTimeout(injectPlyrAria, 300));
 }
 
 function initResizer() {
@@ -333,6 +381,63 @@ function initWaveSurfer(peaks) {
 
     // Draw threshold line after waveform renders
     setTimeout(drawThresholdLine, 100);
+
+    // Inject ARIA attributes into WaveSurfer internals after render
+    setTimeout(injectWaveSurferAria, 200);
+}
+
+/**
+ * Inject ARIA attributes into WaveSurfer's shadow-dom / canvas for screen readers.
+ */
+function injectWaveSurferAria() {
+    // The waveform container
+    const wf = document.getElementById('waveform');
+    if (wf) {
+        wf.setAttribute('role', 'img');
+        wf.setAttribute('aria-label', 'Audio waveform visualization');
+    }
+
+    // Try to reach WaveSurfer's internal canvas (may be in shadow DOM)
+    try {
+        const canvases = document.querySelectorAll('#waveform canvas, #waveform-overview canvas, #waveform-timeline-bar canvas');
+        canvases.forEach(c => {
+            c.setAttribute('role', 'img');
+            c.setAttribute('aria-label', 'Audio waveform');
+        });
+    } catch (_) {}
+
+    // Minimap region
+    const overview = document.getElementById('waveform-overview');
+    if (overview) overview.setAttribute('aria-label', 'Waveform overview minimap');
+}
+
+/**
+ * Inject ARIA attributes into Plyr player for screen readers.
+ */
+function injectPlyrAria() {
+    if (!plyrPlayer || !plyrPlayer.elements || !plyrPlayer.elements.container) return;
+    const container = plyrPlayer.elements.container;
+    container.setAttribute('role', 'application');
+    container.setAttribute('aria-label', 'Video player');
+
+    // Label control buttons
+    const controls = container.querySelector('.plyr__controls');
+    if (controls) {
+        const playBtn = controls.querySelector('[data-plyr="play"]');
+        if (playBtn) playBtn.setAttribute('aria-label', 'Play');
+
+        const muteBtn = controls.querySelector('[data-plyr="mute"]');
+        if (muteBtn) muteBtn.setAttribute('aria-label', 'Mute');
+
+        const fsBtn = controls.querySelector('[data-plyr="fullscreen"]');
+        if (fsBtn) fsBtn.setAttribute('aria-label', 'Fullscreen');
+
+        const progress = controls.querySelector('input[data-plyr="seek"]');
+        if (progress) progress.setAttribute('aria-label', 'Seek');
+
+        const volume = controls.querySelector('input[data-plyr="volume"]');
+        if (volume) volume.setAttribute('aria-label', 'Volume');
+    }
 }
 
 // ═══════════════════════════════════════
@@ -508,6 +613,26 @@ function renderDbRuler() {
 //  EVENTS
 // ═══════════════════════════════════════
 function bindEvents() {
+    // ── Preview mode tabs: keyboard navigation (← →) ──
+    const previewMode = document.querySelector('.preview-mode');
+    if (previewMode) {
+        previewMode.addEventListener('keydown', (e) => {
+            const tabs = Array.from(previewMode.querySelectorAll('[role="tab"]'));
+            const idx = tabs.indexOf(document.activeElement);
+            if (idx === -1) return;
+            let next = idx;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                next = (idx + 1) % tabs.length;
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                next = (idx - 1 + tabs.length) % tabs.length;
+            } else return;
+            tabs[next].focus();
+            tabs[next].click();
+        });
+    }
+
     browseBtn.addEventListener('click', () => fileInput.click());
     dropZone.addEventListener('click', () => fileInput.click());
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
@@ -618,6 +743,14 @@ function bindEvents() {
     // New single export button
     exportBtn.addEventListener('click', handleExport);
 
+    // Drop zone error retry button
+    const dropRetryBtn = document.getElementById('drop-retry-btn');
+    if (dropRetryBtn) {
+        dropRetryBtn.addEventListener('click', () => {
+            resetDropZone();
+        });
+    }
+
     document.getElementById('preset-select').addEventListener('change', (e) => {
         const p = PRESETS[e.target.value];
         if (p) {
@@ -720,18 +853,28 @@ errorModal.retryBtn.addEventListener('click', () => {
     if (r) r();
 });
 
-function showToast(text) {
+function showToast(text, variant) {
+    variant = variant || 'success';
     let toast = document.getElementById('action-toast');
     if (!toast) {
         toast = document.createElement('div');
         toast.id = 'action-toast';
         toast.className = 'btn-toast';
+        toast.setAttribute('role', 'status');
+        toast.setAttribute('aria-live', 'polite');
         document.body.appendChild(toast);
     }
+    // Reset variant classes
+    toast.className = 'btn-toast ' + variant;
     toast.textContent = text;
     toast.classList.add('show');
     clearTimeout(toast._tid);
-    toast._tid = setTimeout(() => toast.classList.remove('show'), 1800);
+    toast._tid = setTimeout(() => toast.classList.remove('show'), 2200);
+    // Click to dismiss
+    toast.onclick = () => {
+        toast.classList.remove('show');
+        clearTimeout(toast._tid);
+    };
 }
 
 /**
@@ -833,7 +976,7 @@ function scheduleAnalysis() {
     updateQueueProgressBadge();
 
     const qs = encodeURIComponent(JSON.stringify(next.settings));
-    const sse = new EventSource(`/api/analyze-stream/${next.sessionId}?settings=${qs}`);
+    const sse = new EventSource(API_BASE + `/api/analyze-stream/${next.sessionId}?settings=${qs}`);
     next._bgSse = sse;
     
     sse.onmessage = (ev) => {
@@ -898,7 +1041,7 @@ async function processItem(item) {
         const form = new FormData();
         form.append('file', item.file);
 
-        const res = await fetch('/api/upload', { method: 'POST', body: form });
+        const res = await fetch(API_BASE + '/api/upload', { method: 'POST', body: form });
         if (!res.ok) {
             const { message, details } = await readFetchError(res, t('err_upload_failed'));
             throw Object.assign(new Error(message), { details });
@@ -917,7 +1060,7 @@ async function processItem(item) {
         }
 
         // Waveform peaks
-        const wvRes = await fetch(`/api/waveform/${item.sessionId}`);
+        const wvRes = await fetch(API_BASE + `/api/waveform/${item.sessionId}`);
         if (!wvRes.ok) {
             const { message, details } = await readFetchError(wvRes, t('err_waveform_failed'));
             throw Object.assign(new Error(message), { details });
@@ -1248,13 +1391,13 @@ function renderQueue() {
         div.dataset.idx = idx;
 
         const statusText = ({
-            queued:    t('status_queued'),
-            uploading: t('status_uploading'),
-            waveform:  t('status_waveform'),
-            ready:     it.analysisDone ? t('status_ready') : t('status_ready_analyze'),
-            analyzing: t('status_analyzing'),
-            done:      t('status_done') + ' ✓',
-            error:     t('status_error'),
+            queued:    '○ ' + t('status_queued'),
+            uploading: '↑ ' + t('status_uploading'),
+            waveform:  '〰 ' + t('status_waveform'),
+            ready:     it.analysisDone ? '✓ ' + t('status_ready') : '○ ' + t('status_ready_analyze'),
+            analyzing: '◉ ' + t('status_analyzing'),
+            done:      '✓ ' + t('status_done'),
+            error:     '✗ ' + t('status_error'),
         })[it.status] || it.status;
 
         const statusCls =
@@ -1361,7 +1504,7 @@ async function runAnalysis() {
 
     const settings = getSettings();
     try {
-        await fetch('/api/settings', {
+        await fetch(API_BASE + '/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId, settings })
@@ -1369,7 +1512,7 @@ async function runAnalysis() {
     } catch (_) { /* non-fatal: settings are also passed via query string */ }
 
     const qs = encodeURIComponent(JSON.stringify(settings));
-    currentSse = new EventSource(`/api/analyze-stream/${currentSessionId}?settings=${qs}`);
+    currentSse = new EventSource(API_BASE + `/api/analyze-stream/${currentSessionId}?settings=${qs}`);
     const sse = currentSse;
     let analysisError = null;
 
@@ -1400,8 +1543,9 @@ async function runAnalysis() {
                 : 0;
             const pctStr = pct.toFixed(0) + '%';
             analysisFill.style.width = pct.toFixed(1) + '%';
-            analysisText.textContent = `${t('status_analyzing').replace('...', '')}: ${fmtTime(sec)} / ${fmtTime(totalDuration)} (${pctStr})`;
-            setStatus(`${t('status_analyzing').replace('...', '')} ${pctStr}`, 'analyzing');
+            analysisBar.setAttribute('aria-valuenow', String(Math.round(pct)));
+            analysisText.textContent = `Analyzing: ${fmtTime(sec)} / ${fmtTime(totalDuration)} (${pctStr})`;
+            setStatus(`Analyzing ${pctStr}`, 'analyzing');
             if (item) { item.progress = pct; renderQueue(); }
         }
 
@@ -1657,7 +1801,7 @@ async function handleExport() {
             const transUrl = format === 'xml' ? `?transition=${settings.transition}` : '';
             
             // Probe first to surface server errors as a popup instead of a broken download
-            const probe = await fetch(`/api/export/${format}/${currentSessionId}${transUrl}`, { method: 'GET' });
+            const probe = await fetch(API_BASE + `/api/export/${format}/${currentSessionId}${transUrl}`, { method: 'GET' });
             if (!probe.ok) {
                 const { message, details } = await readFetchError(probe, `${format.toUpperCase()} export failed`);
                 throw Object.assign(new Error(message), { details });
@@ -1672,7 +1816,7 @@ async function handleExport() {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            showToast(`${format.toUpperCase()} exported`);
+            showToast(`${format.toUpperCase()} exported`, 'success');
         } catch (e) {
             showError({
                 title:    `${format.toUpperCase()} export failed`,
@@ -1697,7 +1841,7 @@ async function handleExport() {
         // Start polling for progress
         exportPollInterval = setInterval(async () => {
             try {
-                const sres = await fetch(`/api/export-status/${currentSessionId}`);
+                const sres = await fetch(API_BASE + `/api/export-status/${currentSessionId}`);
                 if (sres.ok) {
                     const sdata = await sres.json();
                     const p = sdata.progress || 0;
@@ -1707,7 +1851,7 @@ async function handleExport() {
             } catch (_) {}
         }, 1500);
 
-        const res = await fetch(`/api/export/media/${currentSessionId}?format=${format}`, { method: 'POST' });
+        const res = await fetch(API_BASE + `/api/export/media/${currentSessionId}?format=${format}`, { method: 'POST' });
         
         if (exportPollInterval) {
             clearInterval(exportPollInterval);
@@ -1734,7 +1878,7 @@ async function handleExport() {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        showToast(t('status_done'));
+        showToast(t('status_done'), 'success');
     } catch (e) {
         if (exportPollInterval) {
             clearInterval(exportPollInterval);
@@ -1806,8 +1950,43 @@ function parseHMS(hms) {
     return parseFloat(hms) || 0;
 }
 
-function showLoader(msg) { loaderText.textContent = msg || t('loader_working'); loader.classList.remove('hidden'); }
+function showLoader(msg) {
+    loaderText.textContent = msg || t('loader_working');
+    loader.classList.remove('hidden');
+}
 function hideLoader()    { loader.classList.add('hidden'); }
+
+/**
+ * Show drop zone error state (distinct from genuine "empty" state per checklist).
+ */
+function showDropZoneError(message) {
+    const defaultView = document.getElementById('drop-content-default');
+    const errorView   = document.getElementById('drop-content-error');
+    const dropZone    = document.getElementById('drop-zone');
+    const errorMsg    = document.getElementById('drop-error-message');
+
+    if (defaultView) defaultView.classList.add('hidden');
+    if (errorView) errorView.classList.remove('hidden');
+    if (dropZone) dropZone.classList.add('is-error');
+    if (errorMsg) errorMsg.textContent = message || 'Something went wrong. Check your connection and try again.';
+}
+
+function resetDropZone() {
+    const defaultView = document.getElementById('drop-content-default');
+    const errorView   = document.getElementById('drop-content-error');
+    const dropZone    = document.getElementById('drop-zone');
+
+    if (defaultView) defaultView.classList.remove('hidden');
+    if (errorView) errorView.classList.add('hidden');
+    if (dropZone) dropZone.classList.remove('is-error');
+}
+
+function setLoadingText(text) {
+    // Update both loader overlay and analysis bar text
+    if (!loader.classList.contains('hidden')) {
+        loaderText.textContent = text;
+    }
+}
 
 // ── REAL-TIME PREVIEW ──────────────────
 let previewTimeout = null;

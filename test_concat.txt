@@ -1,0 +1,6 @@
+file 'D:/CutShon/testsrc.mp4'
+inpoint 1.5
+outpoint 3.5
+file 'D:/CutShon/testsrc.mp4'
+inpoint 6.5
+outpoint 8.5

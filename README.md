@@ -54,3 +54,46 @@ CutShon คือเครื่องมือสำหรับนักตั
 - **Desktop**: Tauri (Rust + JavaScript)
 - **Mobile**: Capacitor
 - **Core**: FFmpeg
+
+---
+
+## 📦 How to Create a New Release (Automated Build)
+
+When you want to release a new version (e.g. `v0.2.2`), run the following commands in your terminal:
+
+```bash
+# 1. Stage and commit your changes
+git add .
+git commit -m "release: v0.2.2"
+
+# 2. Push latest code to main branch
+git push origin main
+
+# 3. Create and push a new Git tag to trigger auto-build & release
+git tag v0.2.2
+git push origin v0.2.2
+```
+
+> **Note**: GitHub Actions will automatically build the Windows installer (`.exe` / `.msi`) and Android APK (`.apk`), then publish them to the GitHub Releases page.
+
+---
+
+## 📦 วิธีสร้าง Release เวอร์ชั่นใหม่ (Build อัตโนมัติ)
+
+เมื่อต้องการปล่อยเวอร์ชันใหม่ (เช่น `v0.2.2`) ให้รันคำสั่งด้านล่างใน Terminal:
+
+```bash
+# 1. Commit งานทั้งหมดที่แก้ไข
+git add .
+git commit -m "release: v0.2.2"
+
+# 2. Push โค้ดขึ้น branch main
+git push origin main
+
+# 3. ติด Tag เวอร์ชั่นใหม่แล้ว Push ขึ้น GitHub เพื่อเริ่ม Build อัตโนมัติ
+git tag v0.2.2
+git push origin v0.2.2
+```
+
+> **หมายเหตุ**: ระบบ GitHub Actions จะทำการ Build ไฟล์ติดตั้งสำหรับ Windows (`.exe` / `.msi`) และ Android (`.apk`) แล้วอัปโหลดขึ้นหน้า GitHub Releases ให้อัตโนมัติครับ
+
