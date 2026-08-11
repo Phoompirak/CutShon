@@ -97,3 +97,44 @@ git push origin v0.2.2
 
 > **หมายเหตุ**: ระบบ GitHub Actions จะทำการ Build ไฟล์ติดตั้งสำหรับ Windows (`.exe` / `.msi`) และ Android (`.apk`) แล้วอัปโหลดขึ้นหน้า GitHub Releases ให้อัตโนมัติครับ
 
+---
+
+## 🐳 Docker Support (Run Anywhere)
+
+You can run CutShon inside a Docker container on any OS (Linux, macOS, Windows) without installing Node.js or FFmpeg manually.
+
+### Using Docker Compose (Recommended)
+
+```bash
+# Start container
+docker compose up -d
+
+# Open in browser
+http://localhost:3000
+```
+
+### Using Docker CLI directly
+
+```bash
+# Build image
+docker build -t cutshon .
+
+# Run container
+docker run -d -p 3000:3000 --name cutshon cutshon
+```
+
+---
+
+## 🐳 การใช้งานด้วย Docker (รันได้ทุกเครื่อง)
+
+คุณสามารถนำ CutShon ไปรันบนเครื่องอื่นผ่าน Docker ได้ทันทีโดยไม่ต้องติดตั้ง Node.js หรือ FFmpeg ในเครื่องเป้าหมาย
+
+```bash
+# สั่ง Build และรันใน background
+docker compose up -d
+
+# เข้าใช้งานผ่าน Web Browser
+http://localhost:3000
+```
+
+
