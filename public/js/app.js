@@ -1,39 +1,56 @@
-// Added API_BASE logic
+// Added API_BASE logic with automatic server discovery
 let API_BASE = '';
-let apiBaseReady = Promise.resolve(); // Default resolved for browser
+let apiBaseReady = new Promise((resolve) => {
+    const checkServer = async () => {
+        // 1. First check if same-origin /api/ping works
+        try {
+            const r = await fetch('/api/ping');
+            const txt = await r.text();
+            if (r.ok && txt.trim() === 'pong') {
+                API_BASE = '';
+                console.log('CutShon: Same-origin API server detected');
+                resolve();
+                return;
+            }
+        } catch (_) {}
 
-window.addEventListener('DOMContentLoaded', () => {
-    if (window.location.protocol === 'tauri:') {
-        apiBaseReady = new Promise((resolve) => {
-            const scanPorts = async (attempts = 0) => {
-                for (let port = 3000; port < 3010; port++) {
-                    try {
-                        const url = `http://127.0.0.1:${port}`;
-                        const r = await fetch(`${url}/api/ping`);
-                        if (r.ok) { 
-                            API_BASE = url; 
-                            resolve(); 
-                            return; 
-                        }
-                    } catch(e) {}
-                }
-                
-                if (attempts > 30) {
-                    if (typeof showError === 'function') {
-                        showError({
-                            title: 'Connection Failed',
-                            subtitle: 'Cannot connect to background server',
-                            message: 'The local API server failed to start or is blocked by a firewall. Please check the log files located in %LocalAppData%\\CutShon\\logs.',
-                            details: 'Ports 3000-3009 were scanned but no response was received after 30 seconds.'
-                        });
+        // 2. If same-origin /api/ping fails (e.g. Tauri app), scan localhost ports 3000-3009
+        const scanPorts = async (attempts = 0) => {
+            for (let port = 3000; port < 3010; port++) {
+                try {
+                    const url = `http://127.0.0.1:${port}`;
+                    const r = await fetch(`${url}/api/ping`);
+                    const txt = await r.text();
+                    if (r.ok && txt.trim() === 'pong') { 
+                        API_BASE = url; 
+                        console.log('CutShon: Connected to local API server at ' + API_BASE);
+                        resolve(); 
+                        return; 
                     }
-                    resolve(); // Resolve anyway to allow UI interactions (which will likely fail but prevents soft lock)
-                    return;
+                } catch(e) {}
+            }
+            
+            if (attempts > 30) {
+                if (typeof showError === 'function') {
+                    showError({
+                        title: 'Connection Failed',
+                        subtitle: 'Cannot connect to background server',
+                        message: 'The local API server failed to start or is blocked by a firewall. Please check the log files in %LocalAppData%\\CutShon\\logs.',
+                        details: 'Ports 3000-3009 were scanned but no response was received.'
+                    });
                 }
-                setTimeout(() => scanPorts(attempts + 1), 1000);
-            };
-            scanPorts();
-        });
+                resolve();
+                return;
+            }
+            setTimeout(() => scanPorts(attempts + 1), 500);
+        };
+        scanPorts();
+    };
+
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', checkServer);
+    } else {
+        checkServer();
     }
 });
 
