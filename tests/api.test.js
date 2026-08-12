@@ -20,4 +20,23 @@ describe('API Endpoints', () => {
             .send({ sessionId: 'invalid', settings: {} });
         expect(res.statusCode).toBe(404);
     });
+
+    test('POST /api/upload-path with invalid path should return error', async () => {
+        const res = await request(app)
+            .post('/api/upload-path')
+            .send({ filePath: 'non_existent_file.mp4' });
+        expect(res.statusCode).toBe(404);
+        expect(res.body.error).toContain('File not found');
+    });
+
+    test('POST /api/upload-path with valid file path should create session', async () => {
+        const path = require('path');
+        const samplePath = path.join(__dirname, '..', 'testsrc.mp4');
+        const res = await request(app)
+            .post('/api/upload-path')
+            .send({ filePath: samplePath });
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toHaveProperty('sessionId');
+        expect(res.body).toHaveProperty('fileUrl');
+    });
 });

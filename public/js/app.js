@@ -1,23 +1,39 @@
 // Added API_BASE logic
 let API_BASE = '';
-window.addEventListener('DOMContentLoaded', async () => {
+let apiBaseReady = Promise.resolve(); // Default resolved for browser
+
+window.addEventListener('DOMContentLoaded', () => {
     if (window.location.protocol === 'tauri:') {
-        let found = false;
-        for (let port = 3000; port < 3010; port++) {
-            try {
-                const url = `http://127.0.0.1:${port}`;
-                const r = await fetch(`${url}/api/ping`);
-                if (r.ok) { API_BASE = url; found = true; break; }
-            } catch(e) {}
-        }
-        if (!found && typeof showError === 'function') {
-            showError({
-                title: 'Connection Failed',
-                subtitle: 'Cannot connect to background server',
-                message: 'The local API server failed to start or is blocked by a firewall. Please check the log files located in %LocalAppData%\\CutShon\\logs.',
-                details: 'Ports 3000-3009 were scanned but no response was received.'
-            });
-        }
+        apiBaseReady = new Promise((resolve) => {
+            const scanPorts = async (attempts = 0) => {
+                for (let port = 3000; port < 3010; port++) {
+                    try {
+                        const url = `http://127.0.0.1:${port}`;
+                        const r = await fetch(`${url}/api/ping`);
+                        if (r.ok) { 
+                            API_BASE = url; 
+                            resolve(); 
+                            return; 
+                        }
+                    } catch(e) {}
+                }
+                
+                if (attempts > 30) {
+                    if (typeof showError === 'function') {
+                        showError({
+                            title: 'Connection Failed',
+                            subtitle: 'Cannot connect to background server',
+                            message: 'The local API server failed to start or is blocked by a firewall. Please check the log files located in %LocalAppData%\\CutShon\\logs.',
+                            details: 'Ports 3000-3009 were scanned but no response was received after 30 seconds.'
+                        });
+                    }
+                    resolve(); // Resolve anyway to allow UI interactions (which will likely fail but prevents soft lock)
+                    return;
+                }
+                setTimeout(() => scanPorts(attempts + 1), 1000);
+            };
+            scanPorts();
+        });
     }
 });
 
@@ -633,23 +649,35 @@ function bindEvents() {
         });
     }
 
+    // Global prevent default drag & drop behavior to stop WebView2/browser from navigating to files
+    window.addEventListener('dragover', (e) => e.preventDefault(), false);
+    window.addEventListener('drop', (e) => e.preventDefault(), false);
+
     browseBtn.addEventListener('click', () => fileInput.click());
     dropZone.addEventListener('click', () => fileInput.click());
-    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (editorView.classList.contains('hidden')) dropZone.classList.add('drag-over');
+    });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
     dropZone.addEventListener('drop', (e) => {
         e.preventDefault();
         dropZone.classList.remove('drag-over');
-        if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+            const items = Array.from(e.dataTransfer.files).map(f => f.path || f);
+            addFiles(items);
+        }
     });
-    fileInput.addEventListener('change', (e) => { if (e.target.files.length) addFiles(e.target.files); });
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length) addFiles(e.target.files);
+    });
 
     // Whole-window drop target once editor is open (drop more files into queue)
     window.addEventListener('dragover', (e) => {
         if (editorView.classList.contains('hidden')) return;
         if (!e.dataTransfer || !e.dataTransfer.types.includes('Files')) return;
         e.preventDefault();
-        document.getElementById('queue-rail').classList.add('drop-target');
+        document.getElementById('queue-rail')?.classList.add('drop-target');
     });
     window.addEventListener('dragleave', (e) => {
         if (e.target === document || e.relatedTarget === null) {
@@ -658,11 +686,63 @@ function bindEvents() {
     });
     window.addEventListener('drop', (e) => {
         if (editorView.classList.contains('hidden')) return;
-        if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+        if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
         e.preventDefault();
-        document.getElementById('queue-rail').classList.remove('drop-target');
-        addFiles(e.dataTransfer.files);
+        document.getElementById('queue-rail')?.classList.remove('drop-target');
+        const items = Array.from(e.dataTransfer.files).map(f => f.path || f);
+        addFiles(items);
     });
+
+    // Tauri Native Drag-and-Drop integration
+    (function initTauriFileDrop() {
+        if (!window.__TAURI__) return;
+
+        try {
+            const getCurrent = window.__TAURI__.webviewWindow?.getCurrentWebviewWindow || window.__TAURI__.window?.getCurrentWindow;
+            if (typeof getCurrent === 'function') {
+                const appWindow = getCurrent();
+                if (typeof appWindow?.onDragDropEvent === 'function') {
+                    appWindow.onDragDropEvent((event) => {
+                        const type = event.payload?.type;
+                        if (type === 'over') {
+                            if (editorView.classList.contains('hidden')) dropZone.classList.add('drag-over');
+                            else document.getElementById('queue-rail')?.classList.add('drop-target');
+                        } else if (type === 'drop') {
+                            dropZone.classList.remove('drag-over');
+                            document.getElementById('queue-rail')?.classList.remove('drop-target');
+                            const paths = event.payload?.paths;
+                            if (Array.isArray(paths) && paths.length > 0) addFiles(paths);
+                        } else {
+                            dropZone.classList.remove('drag-over');
+                            document.getElementById('queue-rail')?.classList.remove('drop-target');
+                        }
+                    });
+                }
+            }
+        } catch (_) {}
+
+        if (window.__TAURI__.event?.listen) {
+            const { listen } = window.__TAURI__.event;
+            listen('tauri://drag-over', () => {
+                if (editorView.classList.contains('hidden')) dropZone.classList.add('drag-over');
+                else document.getElementById('queue-rail')?.classList.add('drop-target');
+            });
+            listen('tauri://drag-leave', () => {
+                dropZone.classList.remove('drag-over');
+                document.getElementById('queue-rail')?.classList.remove('drop-target');
+            });
+            listen('tauri://drag-cancelled', () => {
+                dropZone.classList.remove('drag-over');
+                document.getElementById('queue-rail')?.classList.remove('drop-target');
+            });
+            listen('tauri://drag-drop', (event) => {
+                dropZone.classList.remove('drag-over');
+                document.getElementById('queue-rail')?.classList.remove('drop-target');
+                const paths = event.payload?.paths || (Array.isArray(event.payload) ? event.payload : null);
+                if (paths && paths.length > 0) addFiles(paths);
+            });
+        }
+    })();
 
     // Queue rail
     document.getElementById('queue-add-btn').addEventListener('click', () => fileInput.click());
@@ -894,13 +974,56 @@ async function readFetchError(res, fallback) {
     return { message: fallback + ` (HTTP ${res.status})` + (cleanBody ? `: ${cleanBody}` : ''), details: body.slice(0, 2000) };
 }
 
+/**
+ * Safely parse JSON from a fetch Response, avoiding SyntaxError on HTML pages (404/500).
+ */
+async function parseJsonResponse(res, fallbackErrorMsg) {
+    const text = await res.text().catch(() => '');
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        const cleanText = text.replace(/<[^>]*>/g, ' ').trim().slice(0, 150);
+        throw new Error(`${fallbackErrorMsg}: Invalid server response${cleanText ? ` (${cleanText})` : ''}`);
+    }
+}
+
 // ═══════════════════════════════════════
 //  QUEUE — multi-video state
 // ═══════════════════════════════════════
-function makeQueueItem(file) {
+function makeQueueItem(fileOrPath) {
+    if (typeof fileOrPath === 'string') {
+        const filePath = fileOrPath;
+        const fileName = filePath.split(/[/\\]/).pop();
+        const ext = (fileName.slice((fileName.lastIndexOf(".") - 1 >>> 0) + 2)).toLowerCase();
+        const audioExts = ['mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg', 'opus'];
+        return {
+            id:               'q_' + Math.random().toString(36).slice(2, 9),
+            file:             null,
+            filePath:         filePath,
+            fileName:         fileName,
+            isAudio:          audioExts.includes(ext),
+            sessionId:        null,
+            fileUrl:          null,
+            peaks:            null,
+            duration:         0,
+            thumbDataUrl:     null,
+            silenceSegments:  [],
+            keepSegments:     [],
+            analysisDone:     false,
+            analysisStats:    null,
+            status:           'queued',   // queued | uploading | waveform | ready | analyzing | done | error
+            progress:         0,
+            error:            null,
+            settings:         getSettings(),
+        };
+    }
+
+    const file = fileOrPath;
+    const filePath = file.path || null;
     return {
         id:               'q_' + Math.random().toString(36).slice(2, 9),
-        file,
+        file:             file,
+        filePath:         filePath,
         fileName:         file.name,
         isAudio:          file.type.startsWith('audio/'),
         sessionId:        null,
@@ -922,6 +1045,7 @@ function makeQueueItem(file) {
 function activeItem() { return activeIndex >= 0 ? videoQueue[activeIndex] : null; }
 
 async function addFiles(fileList) {
+    if (apiBaseReady) await apiBaseReady;
     if (!fileList || fileList.length === 0) return;
     const newItems = Array.from(fileList).map(makeQueueItem);
     const startIdx = videoQueue.length;
@@ -1034,23 +1158,30 @@ function scheduleAnalysis() {
 
 async function processItem(item) {
     try {
-        // Upload
+        // Upload / Add file
         item.status = 'uploading';
         item.progress = 5;
         renderQueue();
 
-        const form = new FormData();
-        form.append('file', item.file);
+        let res;
+        if (item.filePath) {
+            res = await fetch(API_BASE + '/api/upload-path', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filePath: item.filePath })
+            });
+        } else {
+            const form = new FormData();
+            form.append('file', item.file);
+            res = await fetch(API_BASE + '/api/upload', { method: 'POST', body: form });
+        }
 
-        const res = await fetch(API_BASE + '/api/upload', { method: 'POST', body: form });
         if (!res.ok) {
             const { message, details } = await readFetchError(res, t('err_upload_failed'));
             throw Object.assign(new Error(message), { details });
         }
-        const data = await res.json().catch(async () => {
-            const txt = await res.text().catch(() => '');
-            throw new Error(t('err_upload_failed') + `: Server returned invalid response. (${txt.slice(0, 100)})`);
-        });
+
+        const data = await parseJsonResponse(res, t('err_upload_failed'));
         item.sessionId = data.sessionId;
         item.fileUrl   = data.fileUrl;
 
@@ -1069,10 +1200,7 @@ async function processItem(item) {
             const { message, details } = await readFetchError(wvRes, t('err_waveform_failed'));
             throw Object.assign(new Error(message), { details });
         }
-        const wvData = await wvRes.json().catch(async () => {
-            const txt = await wvRes.text().catch(() => '');
-            throw new Error(t('err_waveform_failed') + `: Server returned invalid response. (${txt.slice(0, 100)})`);
-        });
+        const wvData = await parseJsonResponse(wvRes, t('err_waveform_failed'));
         item.peaks = wvData.peaks;
 
         item.status = 'ready';

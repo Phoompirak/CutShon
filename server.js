@@ -347,6 +347,14 @@ app.post('/api/upload', (req, res, next) => {
 }, asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
+    // Catch 0-byte files (common in Tauri WebView2 drag-and-drop restrictions)
+    if (req.file.size === 0) {
+        log.warn('upload', `0-byte file detected: ${req.file.originalname}. This is often caused by WebView2 drag-and-drop restrictions.`);
+        return res.status(400).json({ 
+            error: `File is empty (0 bytes).\n\nIf you dragged and dropped the file, it was blocked by Windows security restrictions. Please use the "Browse file" button instead.` 
+        });
+    }
+
     let originalName = req.file.originalname;
     try { originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8'); }
     catch (_) {}
@@ -364,6 +372,53 @@ app.post('/api/upload', (req, res, next) => {
     };
     saveSessions();
     log.info('upload', `Uploaded: ${originalName} (${(req.file.size/1024/1024).toFixed(1)} MB)`);
+    res.json({ sessionId, filename: originalName, fileUrl });
+}));
+
+// Upload by local file path (Tauri desktop mode & direct file drop)
+app.post('/api/upload-path', asyncHandler(async (req, res) => {
+    const { filePath } = req.body || {};
+    if (!filePath || typeof filePath !== 'string') {
+        return res.status(400).json({ error: 'File path is required' });
+    }
+
+    const normalizedPath = path.normalize(filePath);
+    if (!fs.existsSync(normalizedPath)) {
+        return res.status(404).json({ error: `File not found: ${path.basename(normalizedPath)}` });
+    }
+
+    const ext = path.extname(normalizedPath).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+        return res.status(400).json({ error: `File extension "${ext}" not allowed` });
+    }
+
+    const stat = await fs.promises.stat(normalizedPath);
+    if (stat.size === 0) {
+        return res.status(400).json({ error: `File is empty (0 bytes)` });
+    }
+
+    const sessionId = uuidv4();
+    const originalName = path.basename(normalizedPath);
+    const destName = sessionId + ext;
+    const destPath = path.join(UPLOADS_DIR, destName);
+
+    if (path.resolve(normalizedPath) !== path.resolve(destPath)) {
+        await fs.promises.copyFile(normalizedPath, destPath);
+    }
+
+    const finalPath = await ensurePlayable(destPath);
+    const finalFilename = path.basename(finalPath);
+    const fileUrl = `${PUBLIC_BASE}/uploads/${finalFilename}`;
+
+    sessions[sessionId] = {
+        originalName,
+        path: finalPath,
+        fileUrl,
+        id: sessionId,
+        settings: {}
+    };
+    saveSessions();
+    log.info('upload-path', `Added local file by path: ${originalName} (${(stat.size / 1024 / 1024).toFixed(1)} MB)`);
     res.json({ sessionId, filename: originalName, fileUrl });
 }));
 
